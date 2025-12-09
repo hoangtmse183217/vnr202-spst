@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, isSupabaseConfigured } from '../supabaseClient';
 import { Player } from '../types';
 
 interface LeaderboardScreenProps {
@@ -18,22 +18,22 @@ const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ onBack }) => {
   };
 
   const fetchSupabaseData = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('players')
-        .select('*')
-        .order('score', { ascending: false })
-        .order('time_seconds', { ascending: true })
-        .limit(50);
+    // Explicitly check configuration
+    if (!isSupabaseConfigured()) {
+       throw new Error("Supabase credentials missing");
+    }
 
-      if (error) throw error;
-      if (data) {
-        setLeaderboard(data);
-        setLoading(false);
-      }
-    } catch (error: any) {
-      console.warn("Could not fetch Supabase data, switching to local storage.", error.message || error);
-      fetchLocalData();
+    const { data, error } = await supabase
+      .from('players')
+      .select('*')
+      .order('score', { ascending: false })
+      .order('time_seconds', { ascending: true })
+      .limit(50);
+
+    if (error) throw error;
+    if (data) {
+      setLeaderboard(data);
+      setLoading(false);
     }
   };
 
@@ -54,30 +54,37 @@ const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({ onBack }) => {
   };
 
   useEffect(() => {
-    fetchSupabaseData();
+    // Attempt fetch
+    fetchSupabaseData().catch((error) => {
+       console.warn("Could not fetch Supabase data, switching to local storage.", error.message || error);
+       fetchLocalData();
+    });
 
-    const channel = supabase
-      .channel('public:players_leaderboard')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'players',
-        },
-        () => {
-          if (!usingLocal) {
-             fetchSupabaseData();
-          }
-        }
-      )
-      .subscribe();
+    // Only set up subscription if configured
+    if (isSupabaseConfigured()) {
+        const channel = supabase
+          .channel('public:players_leaderboard')
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'players',
+            },
+            () => {
+              if (!usingLocal) {
+                 fetchSupabaseData().catch(() => {});
+              }
+            }
+          )
+          .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+        return () => {
+          supabase.removeChannel(channel);
+        };
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [usingLocal]);
 
   // Helper for Top 3 Styling
   const getRankStyle = (index: number) => {

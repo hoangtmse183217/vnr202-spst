@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, isSupabaseConfigured } from '../supabaseClient';
 import { Player } from '../types';
 
 interface ResultScreenProps {
@@ -21,6 +21,13 @@ const ResultScreen: React.FC<ResultScreenProps> = ({ score, timeSeconds, playerN
 
   useEffect(() => {
     const submitScoreAndFetchLeaderboard = async () => {
+      // KIỂM TRA: Nếu chưa cấu hình Supabase ENV, dùng ngay Local Storage
+      if (!isSupabaseConfigured()) {
+        console.log("Chưa cấu hình Supabase hoặc key không hợp lệ. Chuyển sang chế độ Offline.");
+        handleLocalStorageFallback();
+        return;
+      }
+
       try {
         // 1. Try Submit Score to Supabase
         const { error: insertError } = await supabase
@@ -57,7 +64,7 @@ const ResultScreen: React.FC<ResultScreenProps> = ({ score, timeSeconds, playerN
         };
 
       } catch (e: any) {
-        console.warn("Supabase connection issue. Switching to Local Storage mode.", e.message || e);
+        console.warn("Lỗi kết nối Supabase. Chuyển sang Local Storage.", e.message || e);
         // Fallback to Local Storage
         handleLocalStorageFallback();
       }
@@ -203,8 +210,17 @@ const ResultScreen: React.FC<ResultScreenProps> = ({ score, timeSeconds, playerN
                         <span className="text-xl md:text-2xl">📜</span> Bảng Xếp Hạng
                     </h3>
                     <div className="flex items-center gap-2 text-[10px] md:text-xs bg-white/10 px-3 py-1.5 rounded-full border border-white/10">
-                        <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                        Cập nhật trực tiếp
+                        {isSupabaseConfigured() ? (
+                           <>
+                             <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                             <span>Online</span>
+                           </>
+                        ) : (
+                           <>
+                             <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
+                             <span>Offline</span>
+                           </>
+                        )}
                     </div>
                 </div>
                 
