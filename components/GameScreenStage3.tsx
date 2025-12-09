@@ -13,7 +13,6 @@ const GameScreenStage3: React.FC<GameScreenStage3Props> = ({ onFinish, onExit, i
   const [totalTime, setTotalTime] = useState(initialTime);
   const [openedTiles, setOpenedTiles] = useState<boolean[]>([false, false, false, false]);
   
-  // Game State
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
   const [userAnswer, setUserAnswer] = useState("");
   const [showKeywordModal, setShowKeywordModal] = useState(false);
@@ -21,6 +20,11 @@ const GameScreenStage3: React.FC<GameScreenStage3Props> = ({ onFinish, onExit, i
   const [feedback, setFeedback] = useState<'none' | 'correct' | 'wrong'>('none');
   const [isFinished, setIsFinished] = useState(false);
   const [resultMessage, setResultMessage] = useState("");
+  
+  // New state to track if user has already made a wrong guess
+  const [hasGuessedWrong, setHasGuessedWrong] = useState(false);
+  // Temporary UI feedback for penalty
+  const [penaltyMessage, setPenaltyMessage] = useState("");
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -44,24 +48,21 @@ const GameScreenStage3: React.FC<GameScreenStage3Props> = ({ onFinish, onExit, i
 
   const normalizeText = (text: string) => {
     return text.trim().toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
-        .replace(/\s+/g, ' '); // Normalize spaces
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") 
+        .replace(/\s+/g, ' '); 
   };
 
   const checkAnswer = (e: React.FormEvent) => {
     e.preventDefault();
     if (activeQuestionId === null) return;
-
     const questionData = HIDDEN_KEYWORD_DATA.questions[activeQuestionId];
     const normalizedUser = normalizeText(userAnswer);
-    
     const isCorrect = questionData.answer.some(ans => normalizeText(ans) === normalizedUser);
 
     if (isCorrect) {
         setFeedback('correct');
         const newScore = currentScore + 20;
         setCurrentScore(newScore);
-        
         setTimeout(() => {
             const newTiles = [...openedTiles];
             newTiles[activeQuestionId] = true;
@@ -80,86 +81,80 @@ const GameScreenStage3: React.FC<GameScreenStage3Props> = ({ onFinish, onExit, i
       const normalizedKeyword = normalizeText(HIDDEN_KEYWORD_DATA.keyword);
 
       if (normalizedGuess === normalizedKeyword) {
-          // WINNER
           finishGame(true);
       } else {
-          // LOSER
-          finishGame(false);
+          // NEW RULE: Wrong guess -> -50% score, close modal, must open all tiles
+          const penaltyScore = Math.floor(currentScore / 2);
+          setCurrentScore(penaltyScore);
+          setHasGuessedWrong(true);
+          setShowKeywordModal(false);
+          setPenaltyMessage("⚠️ Mật mã SAI! Bạn bị trừ 50% điểm. Hãy mở hết các tài liệu còn lại.");
+          setTimeout(() => setPenaltyMessage(""), 4000);
       }
   };
 
   const finishGame = (isWin: boolean) => {
       setIsFinished(true);
       if (timerRef.current) clearInterval(timerRef.current);
-      
       let finalScore = currentScore;
-      
       if (isWin) {
           finalScore += 100;
-          setResultMessage("CHÍNH XÁC! TUYỆT VỜI!");
+          setResultMessage("NHIỆM VỤ HOÀN THÀNH");
           setCurrentScore(finalScore);
       } else {
-          setResultMessage("RẤT TIẾC! SAI TỪ KHÓA RỒI!");
+          setResultMessage("NHIỆM VỤ THẤT BẠI");
       }
-
-      // Reveal everything
       setOpenedTiles([true, true, true, true]);
       setShowKeywordModal(false);
-
       setTimeout(() => {
           onFinish(finalScore, totalTime);
       }, 4000);
   };
 
   const activeQuestion = activeQuestionId !== null ? HIDDEN_KEYWORD_DATA.questions[activeQuestionId] : null;
+  const allTilesOpen = openedTiles.every(t => t === true);
 
   return (
-    <div className="w-full h-screen bg-[#fdfbf7] flex flex-col font-sans relative overflow-hidden">
-       {/* Decorative Background (Matched Stage 1 & 2) */}
-       <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
-         <div className="absolute top-0 right-0 w-96 h-96 bg-red-500 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
-         <div className="absolute bottom-0 left-0 w-96 h-96 bg-yellow-500 rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2"></div>
-         <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(#b45309 0.5px, transparent 0.5px)', backgroundSize: '24px 24px' }}></div>
-       </div>
+    <div className="w-full h-screen relative flex flex-col font-sans overflow-hidden">
+       {/* Penalty Toast */}
+       {penaltyMessage && (
+         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-vnRed text-white px-6 py-4 z-[70] shadow-xl border-2 border-white animate-bounce font-bold text-center">
+            {penaltyMessage}
+         </div>
+       )}
 
-       {/* Header (Matched Stage 1 & 2) */}
-       <div className="relative z-10 bg-white/80 backdrop-blur-md shadow-sm border-b border-gray-200 px-4 py-2 flex justify-between items-center h-16 shrink-0">
+       {/* Header */}
+       <div className="relative z-10 bg-[#fdfbf7] border-b-4 border-double border-ink px-4 py-2 flex justify-between items-center h-16 shrink-0 shadow-sm">
           <div className="flex items-center gap-3">
-             <div className="w-9 h-9 bg-vnRed text-white rounded-lg flex items-center justify-center font-bold text-lg shadow-lg">3</div>
+             <div className="w-10 h-10 bg-ink text-paper border border-ink flex items-center justify-center font-black font-serif text-xl">3</div>
              <div className="flex flex-col">
-                 <h1 className="text-gray-800 font-black uppercase text-sm md:text-base leading-none">Ô Chữ Bí Ẩn</h1>
-                 <span className="text-xs text-red-500 font-bold">Về Đích</span>
+                 <h1 className="text-ink font-black font-serif uppercase text-lg leading-none">Hồ Sơ Mật</h1>
+                 <span className="text-[10px] text-vnRed font-bold uppercase tracking-widest">Tuyệt mật</span>
              </div>
           </div>
           
-          <div className="flex items-center gap-3">
-             <div className="text-right bg-red-50 px-4 py-1 rounded-lg border border-red-100 transition-all duration-300">
-                <p className="text-[10px] text-red-400 uppercase font-bold tracking-wider">Điểm số</p>
-                <p className="text-xl font-black text-vnRed leading-none">{currentScore}</p>
-             </div>
-             <button onClick={onExit} className="w-9 h-9 flex items-center justify-center bg-gray-100 rounded-full hover:bg-gray-200 text-gray-600 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-             </button>
+          <div className="text-right">
+             <p className="text-[10px] text-sepia uppercase font-bold tracking-widest">Tổng Điểm</p>
+             <p className="text-xl font-black text-vnRed font-serif leading-none">{currentScore}</p>
           </div>
        </div>
 
-       {/* Main Content Full Screen */}
-       <div className="flex-1 flex flex-col md:flex-row p-4 md:p-6 gap-6 relative z-10 overflow-hidden">
+       {/* Main Content */}
+       <div className="flex-1 flex flex-col md:flex-row p-6 gap-6 relative z-10 overflow-hidden">
           
-          {/* LEFT: Mystery Image Area (Flex Grow) */}
-          <div className="flex-1 flex flex-col relative h-full">
-             <div className="flex-1 relative rounded-2xl overflow-hidden shadow-2xl border-4 border-white bg-gray-200 group">
-                 {/* The Hidden Content (Revealed underneath) */}
-                 <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-yellow-100 to-orange-100 text-center p-8">
-                    <div className="flex flex-col items-center justify-center h-full w-full animate-pulse-slow">
-                        <div className="border-b-4 border-vnRed pb-4 mb-4">
-                             <h2 className="text-4xl md:text-6xl lg:text-7xl font-black text-vnRed uppercase drop-shadow-sm leading-tight">
+          {/* LEFT: Image Area (Dossier File) */}
+          <div className="flex-1 flex flex-col relative h-full bg-[#e8e4d9] border-4 border-ink p-1 shadow-retro">
+             <div className="relative flex-1 border-2 border-ink overflow-hidden bg-white">
+                 
+                 {/* The Hidden Content */}
+                 <div className="absolute inset-0 flex items-center justify-center bg-paper p-8">
+                    <div className="flex flex-col items-center justify-center h-full w-full text-center">
+                        <div className="border-4 border-double border-vnRed px-8 py-4 mb-4 transform -rotate-2">
+                             <h2 className="text-4xl md:text-6xl font-black font-serif text-vnRed uppercase tracking-tight">
                                 {HIDDEN_KEYWORD_DATA.keyword}
                             </h2>
                         </div>
-                        <p className="text-gray-700 font-serif italic text-xl md:text-2xl">{HIDDEN_KEYWORD_DATA.description}</p>
+                        <p className="text-ink font-serif italic text-xl">{HIDDEN_KEYWORD_DATA.description}</p>
                     </div>
                  </div>
 
@@ -171,18 +166,17 @@ const GameScreenStage3: React.FC<GameScreenStage3Props> = ({ onFinish, onExit, i
                            disabled={isOpen || isFinished}
                            onClick={() => handleTileClick(index)}
                            className={`
-                              relative border-2 border-white/50 transition-all duration-700 overflow-hidden flex items-center justify-center group/tile
-                              ${isOpen ? 'opacity-0 pointer-events-none scale-95' : 'bg-[#2d3748] hover:bg-[#1a202c] cursor-pointer'}
+                              relative border-2 border-ink flex items-center justify-center transition-all duration-500
+                              ${isOpen ? 'opacity-0 pointer-events-none' : 'bg-[#2b2b2b] hover:bg-[#1a1a1a] cursor-pointer'}
                            `}
                         >
                            {!isOpen && (
-                               <>
-                                 <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/diagmonds-light.png')] opacity-10"></div>
-                                 <span className="text-6xl md:text-8xl text-white/20 font-black z-10 transition-transform group-hover/tile:scale-110 duration-300">{index + 1}</span>
-                                 <div className="absolute bottom-6 md:bottom-10 text-white/50 text-sm md:text-base font-bold uppercase tracking-widest bg-black/20 px-3 py-1 rounded-full backdrop-blur-sm group-hover/tile:bg-vnRed group-hover/tile:text-white transition-colors">
-                                     Nhấn để mở
+                               <div className="flex flex-col items-center">
+                                 <span className="text-6xl font-black font-serif text-[#3a3a3a]">?</span>
+                                 <div className="mt-2 text-paper text-xs font-bold uppercase tracking-widest border border-paper px-2 py-1">
+                                     Tài liệu số {index + 1}
                                  </div>
-                               </>
+                               </div>
                            )}
                         </button>
                     ))}
@@ -190,118 +184,106 @@ const GameScreenStage3: React.FC<GameScreenStage3Props> = ({ onFinish, onExit, i
              </div>
           </div>
 
-          {/* RIGHT: Sidebar Controls */}
-          <div className="w-full md:w-80 lg:w-96 flex flex-col gap-4 shrink-0 h-auto md:h-full justify-center">
+          {/* RIGHT: Sidebar */}
+          <div className="w-full md:w-80 flex flex-col gap-6 shrink-0 h-auto md:h-full justify-center">
              
-             {/* Main Action Card */}
-             <div className="bg-white/90 backdrop-blur rounded-2xl shadow-xl p-6 border border-gray-100 relative overflow-hidden">
-                <div className="relative z-10">
-                    <h3 className="text-lg font-black text-gray-800 uppercase mb-1">Chốt Đáp Án</h3>
-                    <p className="text-gray-500 text-xs mb-4 leading-relaxed">
-                        Bạn có thể đoán từ khóa bất cứ lúc nào.<br/>
-                        <span className="text-green-600 font-bold">Đúng: +100 điểm</span> • <span className="text-red-500 font-bold">Sai: Dừng cuộc chơi</span>
-                    </p>
-                    
-                    <button 
-                       disabled={isFinished}
-                       onClick={() => setShowKeywordModal(true)}
-                       className="w-full bg-gradient-to-r from-vnRed to-red-600 hover:from-red-600 hover:to-red-800 text-white font-bold py-4 rounded-xl shadow-lg transform hover:-translate-y-1 transition-all flex items-center justify-center gap-2 text-lg disabled:opacity-50 disabled:cursor-not-allowed group"
-                    >
-                       <span className="text-2xl group-hover:rotate-12 transition-transform">🔑</span> 
-                       ĐOÁN TỪ KHÓA
-                    </button>
-                </div>
-                {/* Decor */}
-                <div className="absolute -right-6 -bottom-6 text-9xl opacity-5 text-black rotate-12">?</div>
+             {/* Action Card */}
+             <div className="bg-paper border-2 border-ink p-6 shadow-retro">
+                <h3 className="text-lg font-bold font-serif text-ink uppercase mb-2 border-b border-ink pb-2">Quyết Định</h3>
+                
+                {hasGuessedWrong && !allTilesOpen ? (
+                   <div className="bg-red-50 p-2 border border-red-200 text-xs text-vnRed font-bold mb-4">
+                      🔒 Đã đoán sai. Vui lòng mở hết các tài liệu còn lại để tiếp tục.
+                   </div>
+                ) : (
+                   <p className="text-sepia text-sm mb-4 italic">
+                       Đoán sai từ khóa sẽ bị <strong className="text-vnRed not-italic">TRỪ 50% SỐ ĐIỂM</strong>.
+                   </p>
+                )}
+                
+                <button 
+                   disabled={isFinished || (hasGuessedWrong && !allTilesOpen)}
+                   onClick={() => setShowKeywordModal(true)}
+                   className={`
+                      w-full font-bold font-serif py-4 border-2 shadow-sm transition-all text-lg uppercase flex items-center justify-center gap-2
+                      ${isFinished || (hasGuessedWrong && !allTilesOpen) 
+                        ? 'bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed' 
+                        : 'bg-vnRed hover:bg-[#b91c15] text-white hover:border-ink cursor-pointer'
+                      }
+                   `}
+                >
+                   <span className="text-xl">✍️</span> 
+                   Giải Mã
+                </button>
              </div>
 
-             {/* Stats / Progress */}
-             <div className="bg-yellow-50/80 backdrop-blur rounded-2xl border border-yellow-200 p-5 shadow-sm">
+             {/* Stats */}
+             <div className="bg-[#fffdf5] border-2 border-ink p-5">
                 <div className="flex justify-between items-center mb-3">
-                    <span className="text-xs font-bold text-yellow-800 uppercase tracking-widest">Tiến độ mở ô</span>
-                    <span className="text-xs font-bold text-yellow-800">{openedTiles.filter(Boolean).length}/4</span>
+                    <span className="text-xs font-bold text-ink uppercase tracking-widest">Tiến độ giải mã</span>
+                    <span className="text-xs font-bold text-ink">{openedTiles.filter(Boolean).length}/4</span>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-4 gap-1 border border-ink p-1">
                      {openedTiles.map((isOpen, idx) => (
-                         <div key={idx} className={`h-2 rounded-full transition-all duration-500 ${isOpen ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-300'}`}></div>
+                         <div key={idx} className={`h-3 ${isOpen ? 'bg-green-700' : 'bg-gray-200'}`}></div>
                      ))}
                 </div>
-             </div>
-
-             {/* Hint Box */}
-             <div className="bg-blue-50/80 backdrop-blur rounded-2xl border border-blue-200 p-5 shadow-sm flex-1 md:flex-none">
-                 <h4 className="flex items-center gap-2 text-blue-800 font-bold uppercase text-xs tracking-wider mb-2">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    Gợi ý chiến thuật
-                 </h4>
-                 <p className="text-blue-900/80 text-sm italic leading-relaxed">
-                    "Hãy tận dụng các ô số để tìm manh mối. Đừng vội đoán từ khóa khi chưa chắc chắn!"
-                 </p>
              </div>
           </div>
        </div>
 
        {/* QUESTION MODAL */}
        {activeQuestionId !== null && activeQuestion && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
-             <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden animate-zoom-in relative border-t-8 border-vnRed">
+         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4">
+             <div className="bg-paper max-w-2xl w-full border-4 border-double border-ink shadow-2xl relative">
                  <button 
                     onClick={() => { setActiveQuestionId(null); setFeedback('none'); }}
-                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+                    className="absolute top-2 right-2 text-ink hover:text-vnRed font-bold px-2 text-xl"
                  >
-                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    ✕
                  </button>
 
-                 <div className="bg-gray-50 p-8 border-b border-gray-200">
-                     <div className="flex items-center gap-3 mb-4">
-                         <span className="bg-gray-800 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">Mảnh ghép {activeQuestionId + 1}</span>
-                         <span className="text-green-600 font-bold text-sm uppercase">+20 Điểm</span>
-                     </div>
-                     <h3 className="text-2xl md:text-3xl font-bold text-gray-800 leading-snug font-serif">
+                 <div className="bg-[#e8e4d9] p-6 border-b-2 border-ink">
+                     <span className="inline-block bg-ink text-paper text-xs font-bold px-2 py-1 mb-2 uppercase">Mật mã số {activeQuestionId + 1}</span>
+                     <h3 className="text-2xl font-bold text-ink font-serif leading-snug">
                         {activeQuestion.question}
                      </h3>
-                     <div className="mt-4 bg-yellow-50 border border-yellow-100 p-3 rounded-lg inline-block">
-                        <p className="text-sm text-yellow-800 font-medium flex items-center gap-2">
-                            <span>💡</span> {activeQuestion.hint}
-                        </p>
+                     <div className="mt-4 border-l-4 border-vnRed pl-3 italic text-sepia text-sm">
+                        Gợi ý: {activeQuestion.hint}
                      </div>
                  </div>
 
-                 <div className="p-8 bg-white">
+                 <div className="p-8 bg-paper">
                      {feedback === 'none' ? (
                         <form onSubmit={checkAnswer} className="flex flex-col gap-6">
-                            <div>
-                                <input 
-                                    type="text" 
-                                    autoFocus
-                                    value={userAnswer}
-                                    onChange={(e) => setUserAnswer(e.target.value)}
-                                    className="w-full text-2xl border-b-4 border-gray-300 px-4 py-4 focus:border-vnRed outline-none transition-all font-bold text-gray-800 placeholder-gray-300 uppercase text-center bg-transparent tracking-widest"
-                                    placeholder="NHẬP ĐÁP ÁN..."
-                                />
-                            </div>
+                            <input 
+                                type="text" 
+                                autoFocus
+                                value={userAnswer}
+                                onChange={(e) => setUserAnswer(e.target.value)}
+                                className="w-full text-2xl border-b-2 border-ink bg-transparent px-2 py-2 focus:border-vnRed outline-none font-bold text-ink placeholder-gray-400 uppercase text-center font-serif"
+                                placeholder="VIẾT ĐÁP ÁN VÀO ĐÂY..."
+                            />
                             <button 
                                 type="submit"
-                                className="w-full bg-vnRed hover:bg-red-700 text-white font-bold py-4 rounded-xl shadow-lg transition-transform active:scale-95 text-lg uppercase tracking-wide"
+                                className="w-full bg-ink text-white hover:bg-sepia font-bold py-3 uppercase tracking-widest border-2 border-transparent hover:border-black"
                             >
-                                Trả Lời
+                                Xác nhận
                             </button>
                         </form>
                      ) : (
-                        <div className="text-center py-6">
+                        <div className="text-center py-4">
                             {feedback === 'correct' ? (
-                                <div className="animate-bounce">
-                                    <div className="text-7xl mb-4">🎉</div>
-                                    <h4 className="text-3xl font-black text-green-600 uppercase mb-2">Chính xác!</h4>
-                                    <p className="text-gray-500 font-bold">Đang lật mảnh ghép...</p>
+                                <div>
+                                    <h4 className="text-3xl font-black font-serif text-green-700 uppercase mb-2">Chính xác!</h4>
+                                    <p className="text-ink">Đang mở tài liệu...</p>
                                 </div>
                             ) : (
-                                <div className="animate-shake">
-                                    <div className="text-7xl mb-4">❌</div>
-                                    <h4 className="text-3xl font-black text-red-600 uppercase mb-4">Chưa đúng!</h4>
+                                <div>
+                                    <h4 className="text-3xl font-black font-serif text-vnRed uppercase mb-4">Sai thông tin!</h4>
                                     <button 
                                         onClick={() => { setFeedback('none'); setUserAnswer(""); }}
-                                        className="px-8 py-3 bg-gray-200 hover:bg-gray-300 rounded-full font-bold text-gray-700 transition-colors"
+                                        className="px-6 py-2 border-2 border-ink font-bold text-ink hover:bg-gray-200 uppercase"
                                     >
                                         Thử lại
                                     </button>
@@ -316,37 +298,33 @@ const GameScreenStage3: React.FC<GameScreenStage3Props> = ({ onFinish, onExit, i
 
        {/* KEYWORD GUESS MODAL */}
        {showKeywordModal && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center bg-vnRed/90 backdrop-blur-xl p-4 animate-fade-in">
-             <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden animate-zoom-in text-center p-10 border-8 border-yellow-400 relative">
-                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-500 via-yellow-400 to-red-500"></div>
-                 
-                 <h3 className="text-3xl md:text-4xl font-black text-vnRed uppercase mb-2 tracking-tight">Quyết Định Táo Bạo!</h3>
-                 <p className="text-gray-500 mb-8 font-medium">Nhập chính xác Từ Khóa Chủ Đề. <br/><span className="text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded">Nếu sai, bạn sẽ bị loại ngay lập tức!</span></p>
+         <div className="fixed inset-0 z-50 flex items-center justify-center bg-vnRed/90 p-4">
+             <div className="bg-paper max-w-lg w-full p-8 border-4 border-ink shadow-[10px_10px_0_#000] text-center">
+                 <h3 className="text-3xl font-black font-serif text-vnRed uppercase mb-2 decoration-ink underline decoration-2 underline-offset-4">Mệnh Lệnh Cuối Cùng</h3>
+                 <p className="text-ink mb-6 font-medium italic">Viết sai, bạn sẽ bị trừ 50% tổng điểm hiện có.</p>
 
                  <form onSubmit={handleKeywordSubmit} className="flex flex-col gap-6">
-                     <div className="relative">
-                         <input 
-                            type="text" 
-                            autoFocus
-                            value={keywordGuess}
-                            onChange={(e) => setKeywordGuess(e.target.value)}
-                            className="w-full text-3xl md:text-4xl text-center border-b-4 border-gray-300 px-4 py-4 focus:border-vnRed outline-none transition-all font-black text-gray-800 placeholder-gray-200 uppercase tracking-widest bg-transparent"
-                            placeholder="TỪ KHÓA..."
-                         />
-                     </div>
-                     <div className="flex gap-4 mt-4">
+                     <input 
+                        type="text" 
+                        autoFocus
+                        value={keywordGuess}
+                        onChange={(e) => setKeywordGuess(e.target.value)}
+                        className="w-full text-3xl text-center border-4 border-ink bg-white px-4 py-4 focus:ring-0 outline-none font-black text-ink uppercase tracking-widest"
+                        placeholder="TỪ KHÓA..."
+                     />
+                     <div className="flex gap-4 mt-2">
                         <button 
                             type="button"
                             onClick={() => setShowKeywordModal(false)}
-                            className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-4 rounded-xl text-lg transition-colors"
+                            className="flex-1 bg-gray-200 border-2 border-ink text-ink font-bold py-3 uppercase"
                         >
                             Hủy bỏ
                         </button>
                         <button 
                             type="submit"
-                            className="flex-1 bg-vnRed hover:bg-red-700 text-white font-bold py-4 rounded-xl shadow-xl hover:shadow-2xl transition-all text-lg uppercase"
+                            className="flex-1 bg-vnRed border-2 border-ink text-white font-bold py-3 uppercase hover:bg-[#b91c15]"
                         >
-                            Chốt Đáp Án
+                            Gửi đi
                         </button>
                      </div>
                  </form>
@@ -354,40 +332,21 @@ const GameScreenStage3: React.FC<GameScreenStage3Props> = ({ onFinish, onExit, i
          </div>
        )}
 
-       {/* FINISH OVERLAY */}
+       {/* FINAL RESULT OVERLAY */}
        {isFinished && (
-         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in">
-             <div className="text-center text-white animate-zoom-in max-w-3xl px-4">
-                 <h2 className="text-4xl md:text-7xl font-black text-yellow-400 mb-6 drop-shadow-[0_4px_0_rgba(0,0,0,0.5)] uppercase leading-tight">
+         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/95">
+             <div className="text-center bg-paper p-10 border-4 border-double border-vnRed max-w-2xl w-full shadow-2xl">
+                 <h2 className="text-4xl md:text-5xl font-black font-serif text-vnRed mb-6 uppercase tracking-wider border-b-2 border-ink pb-4">
                     {resultMessage}
                  </h2>
-                 <div className="bg-white/10 p-6 rounded-2xl backdrop-blur-sm border border-white/20 inline-block mb-8">
-                     <p className="text-gray-300 text-lg uppercase tracking-widest mb-2">Tổng điểm cuối cùng</p>
-                     <p className="text-6xl md:text-8xl font-black text-white">{currentScore}</p>
+                 <div className="mb-6">
+                     <p className="text-sepia text-sm uppercase font-bold tracking-widest mb-2">Tổng kết điểm số</p>
+                     <p className="text-7xl font-black text-ink font-serif">{currentScore}</p>
                  </div>
-                 <div className="mt-4 flex flex-col items-center gap-3">
-                     <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
-                     <p className="text-lg font-medium animate-pulse">Đang tổng kết bảng vàng...</p>
-                 </div>
+                 <p className="text-ink font-bold animate-pulse">Đang chuyển về Bảng Vàng...</p>
              </div>
          </div>
        )}
-
-       <style>{`
-          @keyframes shake {
-             0%, 100% { transform: translateX(0); }
-             20% { transform: translateX(-8px); }
-             40% { transform: translateX(8px); }
-             60% { transform: translateX(-4px); }
-             80% { transform: translateX(4px); }
-          }
-          .animate-shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
-          .animate-pulse-slow { animation: pulse 3s infinite; }
-          @keyframes zoom-in { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-          .animate-zoom-in { animation: zoom-in 0.3s ease-out forwards; }
-          @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-          .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
-       `}</style>
     </div>
   );
 };

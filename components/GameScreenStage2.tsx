@@ -20,9 +20,8 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
   const [gamePacks, setGamePacks] = useState<MatchPack[]>([]);
   const [packIndex, setPackIndex] = useState(0);
   const [currentScore, setCurrentScore] = useState(initialScore);
-  const [timeLeft, setTimeLeft] = useState(120); // 2 minutes countdown
+  const [timeLeft, setTimeLeft] = useState(120); 
   
-  // Game State
   const [leftSelected, setLeftSelected] = useState<number | null>(null);
   const [matchedIds, setMatchedIds] = useState<number[]>([]);
   const [wrongPair, setWrongPair] = useState<{left: number, right: number} | null>(null);
@@ -31,36 +30,22 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
   const [finalBonus, setFinalBonus] = useState(0);
   const [bonusLabel, setBonusLabel] = useState("");
   
-  // Shuffled Right Items
   const [rightItems, setRightItems] = useState<MatchPair[]>([]);
-
-  // Refs for Line Drawing
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
   const [lines, setLines] = useState<{x1: number, y1: number, x2: number, y2: number, id: number}[]>([]);
-
-  // Timer Interval Ref
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Initialize Random Game (10 pairs -> 2 rounds of 5)
   useEffect(() => {
-    // 1. Flatten all pairs from all packs
     const allPairs: MatchPair[] = MATCHING_PACKS.flatMap(p => p.pairs);
-    
-    // 2. Shuffle
     const shuffledAll = [...allPairs].sort(() => Math.random() - 0.5);
-    
-    // 3. Take 10 pairs
     const selectedPairs = shuffledAll.slice(0, 10);
-
-    // 4. Chunk into 2 packs of 5, remapping IDs to 1-5 for UI logic
     const packs: MatchPack[] = [];
     for (let i = 0; i < 2; i++) {
         const chunk = selectedPairs.slice(i * 5, (i + 1) * 5).map((p, idx) => ({
             ...p,
-            id: idx + 1 // Remap ID to 1-5 so local view logic (refs, matching) works simply
+            id: idx + 1 
         }));
-        
         packs.push({
             id: i,
             title: `Vòng ${i + 1} / 2`,
@@ -73,29 +58,23 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
 
   const currentPack = gamePacks[packIndex];
 
-  // Timer Logic
   useEffect(() => {
     if (gamePacks.length === 0 || isFinished) return;
-
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
           if (timerRef.current) clearInterval(timerRef.current);
-          // Time is up! Finish game with current score
           onFinish(currentScore, initialTime + 120); 
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gamePacks, isFinished]); // Add isFinished dependency
+  }, [gamePacks, isFinished, onFinish, currentScore, initialTime]);
 
-  // Initialize Pack & Shuffle Items whenever pack changes
   useEffect(() => {
     if (!currentPack) return;
     const shuffled = [...currentPack.pairs].sort(() => Math.random() - 0.5);
@@ -106,20 +85,17 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
     setWrongPair(null);
   }, [packIndex, currentPack]);
 
-  // Update Line Positions
   useEffect(() => {
     const updateLines = () => {
       if (!containerRef.current) return;
       const containerRect = containerRef.current.getBoundingClientRect();
-      
       const newLines = matchedIds.map(id => {
         const leftEl = itemRefs.current[`left-${id}`];
         const rightEl = itemRefs.current[`right-${id}`];
-        
         if (leftEl && rightEl) {
           const leftRect = leftEl.getBoundingClientRect();
           const rightRect = rightEl.getBoundingClientRect();
-
+          // Coordinates relative to the container content
           return {
             id,
             x1: leftRect.right - containerRect.left,
@@ -130,14 +106,23 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
         }
         return null;
       }).filter(Boolean) as {x1: number, y1: number, x2: number, y2: number, id: number}[];
-
       setLines(newLines);
     };
 
     const to = setTimeout(updateLines, 100);
     window.addEventListener('resize', updateLines);
+    
+    // Add Scroll Listener to update lines when scrolling on mobile
+    const scrollContainer = containerRef.current?.closest('.overflow-y-auto');
+    if (scrollContainer) {
+        scrollContainer.addEventListener('scroll', updateLines);
+    }
+
     return () => {
       window.removeEventListener('resize', updateLines);
+      if (scrollContainer) {
+          scrollContainer.removeEventListener('scroll', updateLines);
+      }
       clearTimeout(to);
     };
   }, [matchedIds, rightItems]);
@@ -157,38 +142,27 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
 
   const handleRightClick = (id: number, e: React.MouseEvent) => {
     if (matchedIds.includes(id) || wrongPair || isFinished) return;
-    
     if (leftSelected === null) return;
 
     if (leftSelected === id) {
-      // Correct Match
-      const newScore = currentScore + 20; // 20 points per match
+      const newScore = currentScore + 20;
       setCurrentScore(newScore);
       setMatchedIds(prev => [...prev, id]);
       setLeftSelected(null);
-      
       triggerScoreFeedback(20, e.clientX, e.clientY);
-
-      // Check Round Complete
       if (matchedIds.length + 1 === currentPack.pairs.length) {
          setTimeout(() => {
            if (packIndex < gamePacks.length - 1) {
              setPackIndex(prev => prev + 1);
            } else {
-             // Game Finished Logic
              finishGame(newScore);
            }
          }, 800);
       }
     } else {
-      // Wrong Match
       setWrongPair({ left: leftSelected, right: id });
-      
-      // Penalty Logic: Deduct 5 points
-      setCurrentScore(prev => Math.max(0, prev - 5)); 
-      
-      triggerScoreFeedback(-5, e.clientX, e.clientY);
-
+      setCurrentScore(prev => Math.max(0, prev - 2)); 
+      triggerScoreFeedback(-2, e.clientX, e.clientY);
       setTimeout(() => {
         setWrongPair(null);
         setLeftSelected(null);
@@ -199,38 +173,24 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
   const finishGame = (finalBaseScore: number) => {
     setIsFinished(true);
     if (timerRef.current) clearInterval(timerRef.current);
-
-    // CALCULATE TIERED BONUS
     let bonus = 0;
     let label = "";
-
-    if (timeLeft > 60) {
-        bonus = 150;
-        label = "Xuất sắc! (>60s)";
-    } else if (timeLeft > 30) {
-        bonus = 100;
-        label = "Rất tốt! (>30s)";
-    } else {
-        bonus = 50;
-        label = "Hoàn thành";
-    }
-
+    if (timeLeft > 60) { bonus = 150; label = "Xuất sắc!"; } 
+    else if (timeLeft > 30) { bonus = 100; label = "Rất tốt!"; } 
+    else { bonus = 50; label = "Hoàn thành"; }
     setFinalBonus(bonus);
     setBonusLabel(label);
-
-    // Wait for animation, then call onFinish
     setTimeout(() => {
       const finalScore = finalBaseScore + bonus;
       const timeTaken = 120 - timeLeft;
       onFinish(finalScore, initialTime + timeTaken);
-    }, 4500); // 4.5 seconds delay to show the animation
+    }, 4500); 
   };
 
   if (gamePacks.length === 0 || !currentPack) {
-    return <div className="min-h-screen bg-[#fdfbf7] flex items-center justify-center text-vnRed font-bold">Đang tải dữ liệu...</div>;
+    return <div className="min-h-screen bg-paper flex items-center justify-center text-ink font-serif">Đang tải hồ sơ...</div>;
   }
 
-  // Formatting Timer
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -238,65 +198,46 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
   };
 
   return (
-    <div className="min-h-screen bg-[#fdfbf7] flex flex-col overflow-hidden relative">
-       {/* Decorative Background */}
-       <div className="absolute inset-0 z-0 opacity-30 pointer-events-none" 
-            style={{ 
-              backgroundImage: 'radial-gradient(#b45309 0.5px, transparent 0.5px)', 
-              backgroundSize: '24px 24px' 
-            }}>
-       </div>
-
-       {/* FINISH OVERLAY */}
+    <div className="min-h-screen relative flex flex-col overflow-hidden">
+       
+       {/* Finish Overlay */}
        {isFinished && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border-4 border-yellow-400 relative overflow-hidden animate-zoom-in">
-               {/* Confetti / Ray Effect */}
-               <div className="absolute inset-0 bg-yellow-50 opacity-50 z-0"></div>
-               <div className="absolute -top-20 -right-20 w-64 h-64 bg-yellow-200 rounded-full blur-3xl opacity-60"></div>
+         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/90">
+            <div className="bg-paper border-4 border-double border-vnRed p-8 max-w-md w-full text-center shadow-2xl relative mx-4">
+               <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-vnRed"></div>
+               <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-vnRed"></div>
+               <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-vnRed"></div>
+               <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-vnRed"></div>
 
-               <div className="relative z-10 text-center">
-                  <div className="text-6xl mb-4 animate-bounce">🏆</div>
-                  <h2 className="text-3xl font-extrabold text-vnRed uppercase tracking-wide mb-6">Hoàn Thành Màn 2</h2>
-                  
-                  <div className="space-y-4 mb-8">
-                     <div className="flex justify-between items-center text-gray-600 border-b border-gray-100 pb-2">
-                        <span className="font-bold">Điểm cơ bản</span>
-                        <span className="font-mono text-xl">{currentScore}</span>
-                     </div>
-                     
-                     <div className="flex justify-between items-center text-blue-600 border-b border-blue-50 pb-2">
-                         <div className="flex flex-col text-left">
-                            <span className="font-bold">Thưởng thời gian</span>
-                            <span className="text-xs text-blue-400">({bonusLabel})</span>
-                         </div>
-                         <span className="font-mono text-xl font-bold">+{finalBonus}</span>
-                     </div>
+               <h2 className="text-2xl md:text-3xl font-black font-serif text-ink uppercase tracking-wider mb-6 border-b-2 border-ink pb-2">Nhiệm Vụ Hoàn Tất</h2>
+               
+               <div className="space-y-4 mb-8">
+                  <div className="flex justify-between items-center text-sepia border-b border-sepia/20 pb-2">
+                     <span className="font-bold">Điểm cơ bản</span>
+                     <span className="font-serif text-xl">{currentScore}</span>
                   </div>
+                  <div className="flex justify-between items-center text-vnRed font-bold">
+                      <span className="uppercase text-sm">Thưởng: {bonusLabel}</span>
+                      <span className="font-serif text-xl">+{finalBonus}</span>
+                  </div>
+               </div>
 
-                  <div className="bg-red-50 p-4 rounded-xl border border-red-100 mb-2">
-                     <p className="text-red-400 text-xs font-bold uppercase tracking-widest mb-1">Tổng điểm hiện tại</p>
-                     <p className="text-5xl font-black text-vnRed animate-pulse-slow">
-                        {currentScore + finalBonus}
-                     </p>
-                  </div>
-                  
-                  <p className="text-green-600 text-sm font-bold mt-4 flex items-center justify-center gap-2 animate-pulse">
-                    Đến Màn 3: Về Đích...
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
+               <div className="bg-ink text-paper p-4 border border-paper shadow-sm mb-4">
+                  <p className="text-xs font-bold uppercase tracking-widest mb-1 opacity-80">Tổng điểm hiện tại</p>
+                  <p className="text-5xl font-black font-serif">
+                     {currentScore + finalBonus}
                   </p>
                </div>
+               <p className="text-sepia text-sm font-bold animate-pulse">Đang chuyển sang Màn 3...</p>
             </div>
          </div>
        )}
 
-       {/* Score Feedbacks Layer */}
+       {/* Score Feedback */}
        {scoreFeedbacks.map(fb => (
          <div
            key={fb.id}
-           className={`fixed z-50 pointer-events-none font-black text-2xl drop-shadow-md ${fb.value > 0 ? 'text-green-600 animate-float-up' : 'text-red-600 animate-drop-down'}`}
+           className={`fixed z-[99999] pointer-events-none font-black text-3xl font-serif ${fb.value > 0 ? 'text-green-800' : 'text-vnRed'}`}
            style={{ left: fb.x, top: fb.y }}
          >
            {fb.value > 0 ? '+' : ''}{fb.value}
@@ -304,207 +245,137 @@ const GameScreenStage2: React.FC<GameScreenStage2Props> = ({ onFinish, onExit, i
        ))}
 
        {/* Header */}
-       <div className="bg-white/80 backdrop-blur-md shadow-sm border-b border-amber-200 p-4 flex justify-between items-center z-30 relative sticky top-0">
-          <div className="flex flex-col">
-            <h2 className="text-xl font-extrabold text-amber-900 uppercase flex items-center gap-2 tracking-wide">
+       <div className="bg-[#fdfbf7] border-b-4 border-double border-ink p-3 md:p-4 flex justify-between items-center z-30 sticky top-0 shadow-sm shrink-0">
+          <div>
+            <h2 className="text-sm md:text-xl font-bold font-serif text-ink uppercase tracking-wide border-b border-vnRed inline-block">
               {currentPack.title}
             </h2>
-            <p className="text-sm text-amber-700/60 font-medium hidden sm:block">{currentPack.description}</p>
           </div>
           
-          {/* Timer Display */}
-          <div className={`absolute left-1/2 -translate-x-1/2 flex items-center gap-2 px-6 py-2 rounded-full border-2 ${timeLeft < 30 ? 'bg-red-50 border-red-500 animate-pulse' : 'bg-white border-amber-200 shadow-inner'}`}>
-              <span className="text-xl">⏳</span>
-              <span className={`text-3xl font-black font-mono leading-none ${timeLeft < 30 ? 'text-red-600' : 'text-gray-800'}`}>
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 border-2 border-ink bg-paper">
+              <span className={`text-xl md:text-3xl font-bold font-mono leading-none ${timeLeft < 30 ? 'text-vnRed' : 'text-ink'}`}>
                 {formatTime(timeLeft)}
               </span>
           </div>
 
-          <div className="flex items-center gap-4">
-             <div className="text-right bg-red-50 px-4 py-1 rounded-lg border border-red-100 transition-all duration-300 transform hover:scale-105">
-                <p className="text-[10px] text-red-400 uppercase font-bold tracking-wider">Điểm số</p>
-                <p className="text-2xl font-black text-vnRed">{currentScore}</p>
-             </div>
-             <button onClick={onExit} className="w-10 h-10 flex items-center justify-center bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-600 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-             </button>
+          <div className="text-right">
+             <p className="text-[10px] text-sepia uppercase font-bold tracking-widest">Điểm</p>
+             <p className="text-xl md:text-2xl font-black text-vnRed font-serif">{currentScore}</p>
           </div>
        </div>
 
-       {/* Progress Bar */}
-       <div className="w-full bg-amber-100 h-2 z-20">
-          <div 
-            className="bg-gradient-to-r from-vnRed to-orange-500 h-2 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(218,37,29,0.5)]" 
-            style={{ width: `${((packIndex * 5 + matchedIds.length) / 10) * 100}%` }}
-          ></div>
-       </div>
-
-       {/* Game Area */}
-       <div className="flex-1 overflow-y-auto p-4 md:p-8 relative z-10" ref={containerRef}>
-          {/* SVG Overlay for Lines */}
-          <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-10 overflow-visible">
-            {lines.map(line => (
-              <line 
-                key={line.id}
-                x1={line.x1} 
-                y1={line.y1} 
-                x2={line.x2} 
-                y2={line.y2} 
-                stroke="#16a34a" 
-                strokeWidth="4" 
-                strokeLinecap="round"
-                strokeDasharray="10"
-                className="animate-draw-line drop-shadow-md opacity-80"
-              />
-            ))}
-          </svg>
-          
-          <div className="max-w-6xl mx-auto grid grid-cols-2 gap-12 md:gap-32 relative z-20 pb-10">
+       {/* Game Board */}
+       <div className="flex-1 overflow-y-auto p-2 md:p-4 relative z-10">
+          <div className="max-w-5xl mx-auto relative min-h-full" ref={containerRef}>
+             {/* SVG Connector Lines */}
+             <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-10 overflow-visible">
+               {lines.map(line => (
+                 <line 
+                   key={line.id}
+                   x1={line.x1} 
+                   y1={line.y1} 
+                   x2={line.x2} 
+                   y2={line.y2} 
+                   stroke="#b91c15" 
+                   strokeWidth="3" 
+                   className="opacity-80"
+                 />
+               ))}
+             </svg>
              
-             {/* Left Column (Question/Subject) */}
-             <div className="flex flex-col gap-5">
-                <div className="flex items-center gap-2 mb-2 justify-center opacity-60">
-                    <span className="h-px bg-amber-800 w-12"></span>
-                    <h3 className="font-bold text-amber-900 uppercase tracking-widest text-xs">Cột A</h3>
-                    <span className="h-px bg-amber-800 w-12"></span>
+             <div className="grid grid-cols-2 gap-4 md:gap-24 relative z-20 pb-10">
+                {/* Left Column */}
+                <div className="flex flex-col gap-3 md:gap-6">
+                   <div className="text-center mb-1">
+                       <span className="bg-ink text-paper px-2 py-1 text-[10px] md:text-xs font-bold uppercase tracking-widest">Dữ kiện A</span>
+                   </div>
+                   {currentPack.pairs.map(pair => {
+                      const isMatched = matchedIds.includes(pair.id);
+                      const isSelected = leftSelected === pair.id;
+                      const isWrong = wrongPair?.left === pair.id;
+
+                      return (
+                        <div
+                           key={pair.id}
+                           ref={el => { itemRefs.current[`left-${pair.id}`] = el }}
+                           onClick={() => handleLeftClick(pair.id)}
+                           className={`
+                             relative p-2 md:p-4 border-2 cursor-pointer transition-all duration-100 select-none min-h-[60px] md:min-h-[80px] flex items-center
+                             ${isMatched 
+                                ? 'bg-gray-200 border-gray-400 text-gray-400' 
+                                : isSelected 
+                                  ? 'bg-white border-vnRed text-ink shadow-retro translate-x-2' 
+                                  : isWrong
+                                    ? 'bg-red-100 border-red-500 text-red-900 animate-shake'
+                                    : 'bg-white border-ink text-ink hover:bg-paper'
+                             }
+                           `}
+                        >
+                           <span className={`font-serif font-bold text-xs md:text-lg leading-snug ${isMatched ? 'line-through decoration-2' : ''}`}>
+                               {pair.leftContent}
+                           </span>
+                           
+                           {/* Dot */}
+                           <div className={`absolute -right-2 top-1/2 -translate-y-1/2 w-3 h-3 md:w-4 md:h-4 rounded-full border-2 border-ink z-30
+                               ${isMatched ? 'bg-gray-400' : isSelected ? 'bg-vnRed' : 'bg-paper'}
+                           `}></div>
+                        </div>
+                      )
+                   })}
                 </div>
-                {currentPack.pairs.map(pair => {
-                   const isMatched = matchedIds.includes(pair.id);
-                   const isSelected = leftSelected === pair.id;
-                   const isWrong = wrongPair?.left === pair.id;
 
-                   return (
-                     <div
-                        key={pair.id}
-                        ref={el => { itemRefs.current[`left-${pair.id}`] = el }}
-                        onClick={() => handleLeftClick(pair.id)}
-                        className={`
-                          group relative pl-6 pr-4 py-6 rounded-r-lg rounded-l-sm border-l-4 cursor-pointer transition-all duration-200 select-none
-                          flex items-center shadow-[4px_4px_0px_rgba(0,0,0,0.05)] min-h-[90px]
-                          ${isMatched 
-                             ? 'bg-emerald-50 border-emerald-500 text-emerald-900 opacity-60 grayscale-[50%]' 
-                             : isSelected 
-                               ? 'bg-blue-50 border-blue-600 text-blue-900 shadow-[0_10px_25px_-5px_rgba(59,130,246,0.3)] translate-x-2' 
-                               : isWrong
-                                 ? 'bg-red-50 border-red-500 text-red-900 animate-shake'
-                                 : 'bg-white border-amber-300 hover:bg-amber-50 hover:border-amber-500 text-gray-800'
-                          }
-                        `}
-                     >
-                        <span className={`font-serif font-bold text-sm md:text-lg leading-snug ${isMatched ? 'line-through decoration-emerald-500/50' : ''}`}>
-                            {pair.leftContent}
-                        </span>
-                        
-                        {/* Connector Pin (Left) */}
-                        <div className={`absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-4 shadow-sm z-30 transition-colors
-                            ${isMatched ? 'bg-emerald-500 border-white' : isSelected ? 'bg-blue-600 border-white scale-125' : 'bg-gray-300 border-white group-hover:bg-amber-400'}
-                        `}></div>
-                     </div>
-                   )
-                })}
-             </div>
-
-             {/* Right Column (Answer/Object) */}
-             <div className="flex flex-col gap-5">
-                <div className="flex items-center gap-2 mb-2 justify-center opacity-60">
-                    <span className="h-px bg-amber-800 w-12"></span>
-                    <h3 className="font-bold text-amber-900 uppercase tracking-widest text-xs">Cột B</h3>
-                    <span className="h-px bg-amber-800 w-12"></span>
+                {/* Right Column */}
+                <div className="flex flex-col gap-3 md:gap-6">
+                   <div className="text-center mb-1">
+                       <span className="bg-ink text-paper px-2 py-1 text-[10px] md:text-xs font-bold uppercase tracking-widest">Dữ kiện B</span>
+                   </div>
+                   {rightItems.map(pair => {
+                      const isMatched = matchedIds.includes(pair.id);
+                      const isWrong = wrongPair?.right === pair.id;
+                      const canSelect = leftSelected !== null && !isMatched;
+                      
+                      return (
+                        <div
+                           key={pair.id}
+                           ref={el => { itemRefs.current[`right-${pair.id}`] = el }}
+                           onClick={(e) => handleRightClick(pair.id, e)}
+                           className={`
+                             relative p-2 md:p-4 border-2 flex items-center justify-end text-right min-h-[60px] md:min-h-[80px] transition-all duration-100
+                             ${isMatched 
+                                ? 'bg-gray-200 border-gray-400 text-gray-400' 
+                                : isWrong
+                                  ? 'bg-red-100 border-red-500 text-red-900 animate-shake'
+                                  : canSelect 
+                                    ? 'bg-white border-ink hover:border-vnRed cursor-pointer'
+                                    : 'bg-white border-gray-300 text-gray-500 cursor-default'
+                             }
+                           `}
+                        >
+                           {/* Dot */}
+                           <div className={`absolute -left-2 top-1/2 -translate-y-1/2 w-3 h-3 md:w-4 md:h-4 rounded-full border-2 border-ink z-30
+                               ${isMatched ? 'bg-gray-400' : 'bg-paper'}
+                           `}></div>
+                           
+                           <span className={`font-sans font-medium text-xs md:text-base leading-snug ${isMatched ? 'line-through decoration-2' : ''}`}>
+                               {pair.rightContent}
+                           </span>
+                        </div>
+                      )
+                   })}
                 </div>
-                {rightItems.map(pair => {
-                   const isMatched = matchedIds.includes(pair.id);
-                   const isWrong = wrongPair?.right === pair.id;
-                   const canSelect = leftSelected !== null && !isMatched;
-                   
-                   return (
-                     <div
-                        key={pair.id}
-                        ref={el => { itemRefs.current[`right-${pair.id}`] = el }}
-                        onClick={(e) => handleRightClick(pair.id, e)}
-                        className={`
-                          group relative pr-6 pl-8 py-6 rounded-l-lg rounded-r-sm border-r-4 transition-all duration-200 select-none
-                          flex items-center justify-end text-right shadow-[4px_4px_0px_rgba(0,0,0,0.05)] min-h-[90px]
-                          ${isMatched 
-                             ? 'bg-emerald-50 border-emerald-500 text-emerald-900 opacity-60 grayscale-[50%]' 
-                             : isWrong
-                               ? 'bg-red-50 border-red-500 text-red-900 animate-shake'
-                               : canSelect 
-                                 ? 'bg-white border-amber-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer text-gray-700'
-                                 : 'bg-white border-gray-200 text-gray-500 cursor-default'
-                          }
-                        `}
-                     >
-                        {/* Connector Pin (Right) */}
-                        <div className={`absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-4 shadow-sm z-30 transition-colors
-                            ${isMatched ? 'bg-emerald-500 border-white' : canSelect ? 'bg-gray-300 border-white group-hover:bg-blue-400' : 'bg-gray-200 border-white'}
-                        `}></div>
-                        
-                        <span className={`font-medium text-sm md:text-base leading-snug ${isMatched ? 'line-through decoration-emerald-500/50' : ''}`}>
-                            {pair.rightContent}
-                        </span>
-                     </div>
-                   )
-                })}
              </div>
-
           </div>
        </div>
 
        <style>{`
-          @keyframes draw-line {
-            from { stroke-dashoffset: 1000; }
-            to { stroke-dashoffset: 0; }
-          }
-          .animate-draw-line {
-            animation: draw-line 0.6s ease-out forwards;
-          }
           @keyframes shake {
-             0%, 100% { transform: translateX(0); }
-             20% { transform: translateX(-8px) rotate(-1deg); }
-             40% { transform: translateX(8px) rotate(1deg); }
-             60% { transform: translateX(-4px); }
-             80% { transform: translateX(4px); }
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
           }
           .animate-shake {
-             animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
-          }
-          @keyframes float-up {
-            0% { transform: translateY(0) scale(1); opacity: 1; }
-            100% { transform: translateY(-30px) scale(1.2); opacity: 0; }
-          }
-          .animate-float-up {
-            animation: float-up 0.8s ease-out forwards;
-          }
-          @keyframes drop-down {
-            0% { transform: translateY(0); opacity: 1; }
-            20% { transform: translateY(-5px); }
-            100% { transform: translateY(20px); opacity: 0; }
-          }
-          .animate-drop-down {
-            animation: drop-down 0.8s ease-in forwards;
-          }
-          @keyframes fade-in {
-             from { opacity: 0; }
-             to { opacity: 1; }
-          }
-          .animate-fade-in {
-             animation: fade-in 0.3s ease-out forwards;
-          }
-          @keyframes zoom-in {
-             from { transform: scale(0.8); opacity: 0; }
-             to { transform: scale(1); opacity: 1; }
-          }
-          .animate-zoom-in {
-             animation: zoom-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-          }
-          @keyframes pulse-slow {
-             0%, 100% { transform: scale(1); }
-             50% { transform: scale(1.05); }
-          }
-          .animate-pulse-slow {
-             animation: pulse-slow 2s infinite ease-in-out;
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
           }
        `}</style>
     </div>
